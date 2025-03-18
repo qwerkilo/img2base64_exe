@@ -3,8 +3,8 @@ import json
 import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout,
                              QWidget, QTextEdit, QStatusBar, QHBoxLayout,
-                             QSpinBox, QTabWidget, QPushButton, QMessageBox)
-from PySide6.QtCore import QTimer
+                             QSpinBox, QTabWidget, QPushButton, QMessageBox,
+                             QLineEdit)
 from PySide6.QtCore import Qt, QMimeData
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
 from typing import Optional
@@ -67,6 +67,18 @@ class MainWindow(QMainWindow):
         self.label.setStyleSheet(DROP_LABEL_STYLE)
         self.label.setMinimumHeight(150)
         layout.addWidget(self.label)
+
+        # 创建标签名称输入框
+        tag_container = QHBoxLayout()
+        tag_label = QLabel("图片标签名称:")
+        tag_label.setStyleSheet(LABEL_STYLE)
+        self.tag_input = QLineEdit()
+        self.tag_input.setPlaceholderText("默认为'image'")
+        self.tag_input.setStyleSheet(TEXT_EDIT_STYLE)
+        tag_container.addWidget(tag_label)
+        tag_container.addWidget(self.tag_input)
+        tag_container.addStretch()
+        layout.addLayout(tag_container)
 
         # 创建结果文本框
         self.result_text = QTextEdit()
@@ -230,7 +242,8 @@ class MainWindow(QMainWindow):
                 self.label.setStyleSheet(PROCESSING_LABEL_STYLE)
                 QApplication.processEvents()
 
-                base64_str, markdown_str = self.image_processor.process_image(file_path)
+                image_tag = self.tag_input.text().strip() or 'image'
+                base64_str, markdown_str = self.image_processor.process_image(file_path, image_tag)
                 
                 self.result_text.setText(markdown_str)
                 QApplication.clipboard().setText(markdown_str)
