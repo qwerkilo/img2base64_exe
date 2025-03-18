@@ -14,6 +14,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("图片转Base64工具")
         self.setAcceptDrops(True)
         self.resize(800, 600)
+        self.processing = False  # 添加处理状态标志
         self.setStyleSheet("""
             QMainWindow {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
@@ -89,6 +90,8 @@ class MainWindow(QMainWindow):
             a0.setDropAction(Qt.DropAction.IgnoreAction)
 
     def dropEvent(self, a0: QDropEvent) -> None:
+        if self.processing:  # 如果正在处理，则不接受新的拖放
+            return
         mime_data = a0.mimeData()
         if mime_data and mime_data.hasUrls():
             files = [u.toLocalFile() for u in mime_data.urls()]
@@ -96,6 +99,22 @@ class MainWindow(QMainWindow):
             files = []
         for file_path in files:
             try:
+                self.processing = True  # 设置处理标志
+                self.label.setText("正在处理图片，请稍候...")
+                self.statusBar.showMessage("正在处理图片...")
+                self.label.setStyleSheet("""
+                    QLabel {
+                        border: 2px solid #fdcb6e;
+                        border-radius: 12px;
+                        padding: 40px;
+                        background-color: rgba(253, 203, 110, 0.1);
+                        font-size: 16px;
+                        font-weight: bold;
+                        color: #b17012;
+                    }
+                """)
+                QApplication.processEvents()  # 确保UI更新
+
                 # 读取图片文件
                 with Image.open(file_path) as img:
                     # 检查图片格式
@@ -106,7 +125,8 @@ class MainWindow(QMainWindow):
                     width, height = img.size
                     max_size = 512
                     if width > max_size or height > max_size:
-                        # 计算缩放比例
+                        self.statusBar.showMessage("正在调整图片尺寸...")
+                        QApplication.processEvents()
                         ratio = min(max_size / width, max_size / height)
                         new_width = int(width * ratio)
                         new_height = int(height * ratio)
@@ -115,7 +135,6 @@ class MainWindow(QMainWindow):
                     # 转换为bytes，确保指定正确的格式
                     buffer = BytesIO()
                     original_format = img.format or 'PNG'
-                    # 处理特殊格式
                     format_mapping = {
                         'JPEG': ('JPEG', 'jpeg'),
                         'JPG': ('JPEG', 'jpeg'),
@@ -127,18 +146,44 @@ class MainWindow(QMainWindow):
                     
                     save_format, mime_type = format_mapping.get(original_format, ('PNG', 'png'))
                     
-                    # 保存图片
-                    if save_format == 'JPEG':
-                        img.save(buffer, format=save_format, quality=95)
-                    else:
-                        img.save(buffer, format=save_format)
+                    # 保存图片并检查文件大小
+                    max_size_kb = 30
+                    quality = 95
+                    compression_count = 0
+                    while True:
+                        buffer.seek(0)
+                        buffer.truncate()
+                        
+                        if save_format == 'JPEG':
+                            img.save(buffer, format=save_format, quality=quality)
+                        else:
+                            img.save(buffer, format=save_format, optimize=True)
+                        
+                        # 检查文件大小
+                        current_size = len(buffer.getvalue()) / 1024  # 转换为KB
+                        if current_size <= max_size_kb:
+                            break
+                            
+                        # 如果文件仍然过大，继续压缩
+                        compression_count += 1
+                        self.statusBar.showMessage(f"正在压缩图片...（第{compression_count}次尝试）当前大小：{current_size:.1f}KB")
+                        QApplication.processEvents()
+
+                        if quality > 5:  # 控制最低质量
+                            quality -= 5
+                        else:  # 如果质量已经很低，尝试缩小尺寸
+                            width, height = img.size
+                            if width <= 50 or height <= 50:  # 控制最小尺寸
+                                break
+                            new_width = int(width * 0.9)
+                            new_height = int(height * 0.9)
+                            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                            quality = 95  # 重置质量开始新一轮压缩
                     
+                    self.statusBar.showMessage("正在生成Base64编码...")
+                    QApplication.processEvents()
                     img_bytes = buffer.getvalue()
-                    
-                    # 转换为base64
                     base64_str = base64.b64encode(img_bytes).decode()
-                    
-                    # 生成Typora兼容的Markdown图片链接
                     markdown_str = f"![image](data:image/{mime_type};base64,{base64_str})"
                     
                     # 显示结果并复制到剪贴板
@@ -176,6 +221,8 @@ class MainWindow(QMainWindow):
                         color: #d63031;
                     }
                 """)
+            finally:
+                self.processing = False  # 重置处理标志
 
 def main():
     app = QApplication(sys.argv)
