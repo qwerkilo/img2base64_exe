@@ -1,5 +1,4 @@
 import sys
-import base64
 import json
 import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout,
@@ -8,9 +7,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout,
 from PySide6.QtCore import QTimer
 from PySide6.QtCore import Qt, QMimeData
 from PySide6.QtGui import QDragEnterEvent, QDropEvent
-from PIL import Image
-from io import BytesIO
 from typing import Optional
+from image_processor import ImageProcessor
+from styles import *
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -18,69 +17,18 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("图片转Base64工具")
         self.setAcceptDrops(True)
         self.resize(800, 600)
-        self.processing = False  # 添加处理状态标志
+        self.processing = False
         self.config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
-        self.load_config()  # 加载配置
+        self.load_config()
+        self.image_processor = ImageProcessor(
+            max_size_kb=self.max_size_kb,
+            max_image_size=self.max_image_size,
+            image_quality=self.image_quality
+        )
+        self.setup_ui()
 
-        self.setStyleSheet("""
-            QMainWindow {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                                          stop:0 #f6f7f8, stop:1 #e9ebee);
-            }
-            QLabel {
-                font-family: 'Microsoft YaHei', 'Arial';
-                font-size: 14px;
-                color: #2c3e50;
-            }
-            QSpinBox {
-                background-color: white;
-                border: 1px solid #dcdde1;
-                border-radius: 4px;
-                padding: 4px;
-                font-size: 14px;
-                min-width: 80px;
-            }
-            QSpinBox::up-button, QSpinBox::down-button {
-                width: 20px;
-                height: 12px;
-                border: none;
-                background-color: #f5f6fa;
-                border-radius: 2px;
-                margin: 1px;
-            }
-            QSpinBox::up-button:hover, QSpinBox::down-button:hover {
-                background-color: #dcdde1;
-            }
-            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
-                background-color: #74b9ff;
-            }
-            QSpinBox::up-arrow {
-                image: url("data:image/svg+xml;utf8,<svg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'><path d='M1 5L5 1L9 5' stroke='#2c3e50' stroke-width='1.5' fill='none'/></svg>");
-                width: 10px;
-                height: 6px;
-            }
-            QSpinBox::down-arrow {
-                image: url("data:image/svg+xml;utf8,<svg width='10' height='6' viewBox='0 0 10 6' xmlns='http://www.w3.org/2000/svg'><path d='M1 1L5 5L9 1' stroke='#2c3e50' stroke-width='1.5' fill='none'/></svg>");
-                width: 10px;
-                height: 6px;
-            }
-            QTextEdit {
-                background-color: white;
-                border: 1px solid #dcdde1;
-                border-radius: 8px;
-                padding: 10px;
-                font-family: 'Consolas', 'Courier New';
-                font-size: 13px;
-                selection-background-color: #74b9ff;
-            }
-            QStatusBar {
-                background-color: #f5f6fa;
-                color: #576574;
-                font-size: 12px;
-            }
-        """)
-
-        # 创建主窗口部件
+    def setup_ui(self):
+        self.setStyleSheet(MAIN_WINDOW_STYLE)
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
@@ -89,140 +37,17 @@ class MainWindow(QMainWindow):
 
         # 创建标签页
         tab_widget = QTabWidget()
-        tab_widget.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #dcdde1;
-                border-radius: 8px;
-                background-color: white;
-            }
-            QTabBar::tab {
-                background: #f5f6fa;
-                border: 1px solid #dcdde1;
-                border-bottom: none;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                padding: 8px 12px;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                background: white;
-                border-bottom: none;
-                margin-bottom: -1px;
-            }
-        """)
+        tab_widget.setStyleSheet(TAB_WIDGET_STYLE)
 
         # 创建主要功能标签页
         main_tab = QWidget()
         main_layout = QVBoxLayout(main_tab)
+        self.setup_main_tab(main_layout)
 
         # 创建设置标签页
         settings_tab = QWidget()
         settings_layout = QVBoxLayout(settings_tab)
-        
-        # 文件大小限制设置
-        size_limit_container = QHBoxLayout()
-        size_limit_label = QLabel("文件大小限制(KB):")
-        self.size_limit_input = QSpinBox()
-        self.size_limit_input.setRange(1, 1000)  # 设置范围1KB到1000KB
-        self.size_limit_input.setValue(self.max_size_kb)
-        self.size_limit_input.setSingleStep(1)  # 设置步长为1KB
-        self.size_limit_input.valueChanged.connect(self.update_size_limit)
-        self.size_limit_input.setStyleSheet("""
-            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
-                background-color: #dcdde1;
-            }
-        """)
-        size_limit_container.addWidget(size_limit_label)
-        size_limit_container.addWidget(self.size_limit_input)
-        size_limit_container.addStretch()
-        settings_layout.addLayout(size_limit_container)
-
-        # 图片最大尺寸设置
-        max_size_container = QHBoxLayout()
-        max_size_label = QLabel("图片最大尺寸(像素):")
-        self.max_size_input = QSpinBox()
-        self.max_size_input.setRange(100, 2000)  # 设置范围100到2000像素
-        self.max_size_input.setValue(self.max_image_size)  # 使用配置文件中的值
-        self.max_size_input.setSingleStep(10)  # 设置步长为10像素
-        self.max_size_input.valueChanged.connect(self.update_max_size)
-        self.max_size_input.setStyleSheet("""
-            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
-                background-color: #dcdde1;
-            }
-        """)
-        max_size_container.addWidget(max_size_label)
-        max_size_container.addWidget(self.max_size_input)
-        max_size_container.addStretch()
-        settings_layout.addLayout(max_size_container)
-
-        # 图片质量设置
-        quality_container = QHBoxLayout()
-        quality_label = QLabel("图片质量(1-100):")
-        self.quality_input = QSpinBox()
-        self.quality_input.setRange(1, 100)  # 设置范围1到100
-        self.quality_input.setValue(self.image_quality)  # 使用配置值
-        self.quality_input.valueChanged.connect(self.update_quality)
-        self.quality_input.setSingleStep(1)  # 设置步长为1
-        self.quality_input.setStyleSheet("""
-            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
-                background-color: #dcdde1;
-            }
-        """)
-        quality_container.addWidget(quality_label)
-        quality_container.addWidget(self.quality_input)
-        quality_container.addStretch()
-        settings_layout.addLayout(quality_container)
-
-        # 添加保存按钮
-        save_button = QPushButton("保存设置")
-        save_button.setStyleSheet("""
-            QPushButton {
-                background-color: #0984e3;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0878d4;
-            }
-            QPushButton:pressed {
-                background-color: #076ebf;
-            }
-        """)
-        save_button.clicked.connect(self.save_config)
-        settings_layout.addWidget(save_button)
-        
-        settings_layout.addStretch()
-
-        # 创建提示标签
-        self.label = QLabel("将图片文件拖放到这里")
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setStyleSheet("""
-            QLabel {
-                border: 2px dashed #74b9ff;
-                border-radius: 12px;
-                padding: 40px;
-                background-color: rgba(116, 185, 255, 0.1);
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QLabel:hover {
-                background-color: rgba(116, 185, 255, 0.2);
-                border-color: #0984e3;
-            }
-        """)
-        self.label.setMinimumHeight(150)
-        main_layout.addWidget(self.label)
-
-        # 创建结果文本框
-        self.result_text = QTextEdit()
-        self.result_text.setPlaceholderText("转换结果将显示在这里")
-        self.result_text.setReadOnly(True)
-        self.result_text.setMinimumHeight(200)
-        main_layout.addWidget(self.result_text)
+        self.setup_settings_tab(settings_layout)
 
         # 添加标签页
         tab_widget.addTab(main_tab, "转换")
@@ -232,7 +57,77 @@ class MainWindow(QMainWindow):
         # 创建状态栏
         self._statusBar = QStatusBar()
         self.setStatusBar(self._statusBar)
+        self._statusBar.setStyleSheet(STATUS_BAR_STYLE)
         self._statusBar.showMessage("准备就绪，等待拖入图片...")
+
+    def setup_main_tab(self, layout):
+        # 创建提示标签
+        self.label = QLabel("将图片文件拖放到这里")
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setStyleSheet(DROP_LABEL_STYLE)
+        self.label.setMinimumHeight(150)
+        layout.addWidget(self.label)
+
+        # 创建结果文本框
+        self.result_text = QTextEdit()
+        self.result_text.setPlaceholderText("转换结果将显示在这里")
+        self.result_text.setReadOnly(True)
+        self.result_text.setMinimumHeight(200)
+        self.result_text.setStyleSheet(TEXT_EDIT_STYLE)
+        layout.addWidget(self.result_text)
+
+    def setup_settings_tab(self, layout):
+        # 文件大小限制设置
+        size_limit_container = QHBoxLayout()
+        size_limit_label = QLabel("文件大小限制(KB):")
+        size_limit_label.setStyleSheet(LABEL_STYLE)
+        self.size_limit_input = QSpinBox()
+        self.size_limit_input.setRange(1, 1000)
+        self.size_limit_input.setValue(self.max_size_kb)
+        self.size_limit_input.setSingleStep(1)
+        self.size_limit_input.valueChanged.connect(self.update_size_limit)
+        self.size_limit_input.setStyleSheet(SPIN_BOX_STYLE)
+        size_limit_container.addWidget(size_limit_label)
+        size_limit_container.addWidget(self.size_limit_input)
+        size_limit_container.addStretch()
+        layout.addLayout(size_limit_container)
+
+        # 图片最大尺寸设置
+        max_size_container = QHBoxLayout()
+        max_size_label = QLabel("图片最大尺寸(像素):")
+        max_size_label.setStyleSheet(LABEL_STYLE)
+        self.max_size_input = QSpinBox()
+        self.max_size_input.setRange(100, 2000)
+        self.max_size_input.setValue(self.max_image_size)
+        self.max_size_input.setSingleStep(10)
+        self.max_size_input.valueChanged.connect(self.update_max_size)
+        self.max_size_input.setStyleSheet(SPIN_BOX_STYLE)
+        max_size_container.addWidget(max_size_label)
+        max_size_container.addWidget(self.max_size_input)
+        max_size_container.addStretch()
+        layout.addLayout(max_size_container)
+
+        # 图片质量设置
+        quality_container = QHBoxLayout()
+        quality_label = QLabel("图片质量(1-100):")
+        quality_label.setStyleSheet(LABEL_STYLE)
+        self.quality_input = QSpinBox()
+        self.quality_input.setRange(1, 100)
+        self.quality_input.setValue(self.image_quality)
+        self.quality_input.setSingleStep(1)
+        self.quality_input.valueChanged.connect(self.update_quality)
+        self.quality_input.setStyleSheet(SPIN_BOX_STYLE)
+        quality_container.addWidget(quality_label)
+        quality_container.addWidget(self.quality_input)
+        quality_container.addStretch()
+        layout.addLayout(quality_container)
+
+        # 添加保存按钮
+        save_button = QPushButton("保存设置")
+        save_button.setStyleSheet(SAVE_BUTTON_STYLE)
+        save_button.clicked.connect(self.save_config)
+        layout.addWidget(save_button)
+        layout.addStretch()
 
     def load_config(self):
         try:
@@ -243,7 +138,7 @@ class MainWindow(QMainWindow):
                     self.max_image_size = config.get('max_image_size', 768)
                     self.image_quality = config.get('image_quality', 95)
             else:
-                self.max_size_kb = 30  # 默认大小限制
+                self.max_size_kb = 30
                 self.max_image_size = 768
                 self.image_quality = 95
         except Exception as e:
@@ -254,278 +149,49 @@ class MainWindow(QMainWindow):
 
     def save_config(self):
         try:
-            # 获取当前设置值
             config = {
                 'max_size_kb': self.size_limit_input.value(),
                 'max_image_size': self.max_size_input.value(),
                 'image_quality': self.quality_input.value()
             }
             
-            # 保存到配置文件
             with open(self.config_file, 'w', encoding='utf-8') as f:
                 json.dump(config, f, indent=4)
             
-            # 更新内部变量
-            self.max_size_kb = config['max_size_kb']
-            self.max_image_size = config['max_image_size']
-            self.image_quality = config['image_quality']
+            self.image_processor.update_settings(
+                max_size_kb=config['max_size_kb'],
+                max_image_size=config['max_image_size'],
+                image_quality=config['image_quality']
+            )
             
-            # 添加保存成功的视觉反馈
-            save_button = self.sender()
-            original_style = save_button.property("styleSheet")
-            save_button.setProperty("styleSheet", """
-                QPushButton {
-                    background-color: #27ae60;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 8px 16px;
-                    font-size: 14px;
-                    font-weight: bold;
-                }
-            """)
             self._statusBar.showMessage("设置已成功保存！")
-            
-            # 显示成功消息对话框
-            msg_box = QMessageBox(self)
-            msg_box.setIcon(QMessageBox.Icon.Information)
-            msg_box.setWindowTitle("保存成功")
-            msg_box.setText("设置已成功保存！")
-            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-            msg_box.setStyleSheet("""
-                QMessageBox {
-                    background-color: white;
-                }
-                QMessageBox QLabel {
-                    color: #2c3e50;
-                    font-size: 14px;
-                    min-width: 200px;
-                }
-                QPushButton {
-                    background-color: #0984e3;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 8px 16px;
-                    font-size: 14px;
-                    font-weight: bold;
-                }
-            """)
-            msg_box.exec_()
-            
-            # 1秒后恢复按钮样式
-            QTimer.singleShot(1000, lambda: save_button.setProperty("styleSheet", original_style))
+            self.show_success_message("保存成功", "设置已成功保存！")
             
         except Exception as e:
             self._statusBar.showMessage(f"保存配置失败：{str(e)}")
-            save_button = self.sender()
-            save_button.setProperty("styleSheet", """
-                QPushButton {
-                    background-color: #e74c3c;
-                    color: white;
-                    border: none;
-                    border-radius: 4px;
-                    padding: 8px 16px;
-                    font-size: 14px;
-                    font-weight: bold;
-                }
-            """)
+            self.show_error_message("保存失败", f"保存配置失败：{str(e)}")
 
+    def show_success_message(self, title: str, message: str):
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Information)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.setStyleSheet(LABEL_STYLE)
+        msg_box.exec_()
 
+    def show_error_message(self, title: str, message: str):
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Icon.Critical)
+        msg_box.setWindowTitle(title)
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg_box.setStyleSheet(LABEL_STYLE)
+        msg_box.exec_()
 
-        self.setStyleSheet("""
-            QMainWindow {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                                          stop:0 #f6f7f8, stop:1 #e9ebee);
-            }
-            QLabel {
-                font-family: 'Microsoft YaHei', 'Arial';
-                font-size: 14px;
-                color: #2c3e50;
-            }
-            QSpinBox {
-                background-color: white;
-                border: 1px solid #dcdde1;
-                border-radius: 4px;
-                padding: 4px;
-                font-size: 14px;
-                min-width: 80px;
-            }
-            QTextEdit {
-                background-color: white;
-                border: 1px solid #dcdde1;
-                border-radius: 8px;
-                padding: 10px;
-                font-family: 'Consolas', 'Courier New';
-                font-size: 13px;
-                selection-background-color: #74b9ff;
-            }
-            QStatusBar {
-                background-color: #f5f6fa;
-                color: #576574;
-                font-size: 12px;
-            }
-        """)
-
-        # 创建主窗口部件
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-
-        # 创建标签页
-        tab_widget = QTabWidget()
-        tab_widget.setStyleSheet("""
-            QTabWidget::pane {
-                border: 1px solid #dcdde1;
-                border-radius: 8px;
-                background-color: white;
-            }
-            QTabBar::tab {
-                background: #f5f6fa;
-                border: 1px solid #dcdde1;
-                border-bottom: none;
-                border-top-left-radius: 4px;
-                border-top-right-radius: 4px;
-                padding: 8px 12px;
-                margin-right: 2px;
-            }
-            QTabBar::tab:selected {
-                background: white;
-                border-bottom: none;
-                margin-bottom: -1px;
-            }
-        """)
-
-        # 创建主要功能标签页
-        main_tab = QWidget()
-        main_layout = QVBoxLayout(main_tab)
-
-        # 创建设置标签页
-        settings_tab = QWidget()
-        settings_layout = QVBoxLayout(settings_tab)
-        
-        # 文件大小限制设置
-        size_limit_container = QHBoxLayout()
-        size_limit_label = QLabel("文件大小限制(KB):")
-        self.size_limit_input = QSpinBox()
-        self.size_limit_input.setRange(1, 1000)  # 设置范围1KB到1000KB
-        self.size_limit_input.setValue(self.max_size_kb)
-        self.size_limit_input.setSingleStep(1)  # 设置步长为1KB
-        self.size_limit_input.valueChanged.connect(self.update_size_limit)
-        self.size_limit_input.setStyleSheet("""
-            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
-                background-color: #dcdde1;
-            }
-        """)
-        size_limit_container.addWidget(size_limit_label)
-        size_limit_container.addWidget(self.size_limit_input)
-        size_limit_container.addStretch()
-        settings_layout.addLayout(size_limit_container)
-
-        # 图片最大尺寸设置
-        max_size_container = QHBoxLayout()
-        max_size_label = QLabel("图片最大尺寸(像素):")
-        self.max_size_input = QSpinBox()
-        self.max_size_input.setRange(100, 2000)  # 设置范围100到2000像素
-        self.max_size_input.setValue(self.max_image_size)  # 使用配置文件中的值
-        self.max_size_input.setSingleStep(10)  # 设置步长为10像素
-        self.max_size_input.valueChanged.connect(self.update_max_size)
-        self.max_size_input.setStyleSheet("""
-            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
-                background-color: #dcdde1;
-            }
-        """)
-        max_size_container.addWidget(max_size_label)
-        max_size_container.addWidget(self.max_size_input)
-        max_size_container.addStretch()
-        settings_layout.addLayout(max_size_container)
-
-        # 图片质量设置
-        quality_container = QHBoxLayout()
-        quality_label = QLabel("图片质量(1-100):")
-        self.quality_input = QSpinBox()
-        self.quality_input.setRange(1, 100)  # 设置范围1到100
-        self.quality_input.setValue(self.image_quality)  # 使用配置值
-        self.quality_input.valueChanged.connect(self.update_quality)
-        self.quality_input.setSingleStep(1)  # 设置步长为1
-        self.quality_input.valueChanged.connect(self.update_quality)
-        self.quality_input.setStyleSheet("""
-            QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
-                background-color: #dcdde1;
-            }
-        """)
-        quality_container.addWidget(quality_label)
-        quality_container.addWidget(self.quality_input)
-        quality_container.addStretch()
-        settings_layout.addLayout(quality_container)
-
-        # 添加保存按钮
-        save_button = QPushButton("保存设置")
-        save_button.setStyleSheet("""
-            QPushButton {
-                background-color: #0984e3;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                padding: 8px 16px;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #0878d4;
-            }
-            QPushButton:pressed {
-                background-color: #076ebf;
-            }
-        """)
-        save_button.clicked.connect(self.save_config)
-        settings_layout.addWidget(save_button)
-        
-        settings_layout.addStretch()
-
-        # 创建提示标签
-        self.label = QLabel("将图片文件拖放到这里")
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.label.setStyleSheet("""
-            QLabel {
-                border: 2px dashed #74b9ff;
-                border-radius: 12px;
-                padding: 40px;
-                background-color: rgba(116, 185, 255, 0.1);
-                font-size: 16px;
-                font-weight: bold;
-            }
-            QLabel:hover {
-                background-color: rgba(116, 185, 255, 0.2);
-                border-color: #0984e3;
-            }
-        """)
-        self.label.setMinimumHeight(150)
-        main_layout.addWidget(self.label)
-
-        # 创建结果文本框
-        self.result_text = QTextEdit()
-        self.result_text.setPlaceholderText("转换结果将显示在这里")
-        self.result_text.setReadOnly(True)
-        self.result_text.setMinimumHeight(200)
-        main_layout.addWidget(self.result_text)
-
-        # 添加标签页
-        tab_widget.addTab(main_tab, "转换")
-        tab_widget.addTab(settings_tab, "设置")
-        layout.addWidget(tab_widget)
-
-        # 创建状态栏
-        self._statusBar = QStatusBar()
-        self.setStatusBar(self._statusBar)
-        self._statusBar.showMessage("准备就绪，等待拖入图片...")
-
-    
     def dragEnterEvent(self, a0: Optional[QDragEnterEvent]):
         assert a0 is not None
-        mime_data: Optional[QMimeData] = a0.mimeData()  # type: ignore
+        mime_data: Optional[QMimeData] = a0.mimeData()
         if mime_data is not None and mime_data.hasUrls():
             a0.accept()
         else:
@@ -533,123 +199,55 @@ class MainWindow(QMainWindow):
 
     def update_size_limit(self, value):
         self.max_size_kb = value
+        self.image_processor.update_settings(max_size_kb=value)
         self._statusBar.showMessage(f"已更新文件大小限制为: {value}KB")
 
     def update_max_size(self, value):
         self.max_image_size = value
+        self.image_processor.update_settings(max_image_size=value)
         self._statusBar.showMessage(f"已更新图片最大尺寸为: {value}像素")
 
     def update_quality(self, value):
+        self.image_quality = value
+        self.image_processor.update_settings(image_quality=value)
         self._statusBar.showMessage(f"已更新图片质量为: {value}")
 
     def dropEvent(self, a0: QDropEvent) -> None:
-        if self.processing:  # 如果正在处理，则不接受新的拖放
+        if self.processing:
             return
+
         mime_data = a0.mimeData()
         if mime_data and mime_data.hasUrls():
             files = [u.toLocalFile() for u in mime_data.urls()]
         else:
             files = []
+
         for file_path in files:
             try:
-                self.processing = True  # 设置处理标志
+                self.processing = True
                 self.label.setText("正在处理图片，请稍候...")
                 self._statusBar.showMessage("正在处理图片...")
-                self.label.setStyleSheet("""
-                    QLabel {
-                        border: 2px solid #fdcb6e;
-                        border-radius: 12px;
-                        padding: 40px;
-                        background-color: rgba(253, 203, 110, 0.1);
-                        font-size: 16px;
-                        font-weight: bold;
-                        color: #b17012;
-                    }
-                """)
-                QApplication.processEvents()  # 确保UI更新
+                self.label.setStyleSheet(PROCESSING_LABEL_STYLE)
+                QApplication.processEvents()
 
-                # 读取图片文件
-                with Image.open(file_path) as img:
-                    # 检查图片格式
-                    if img.format not in ['PNG', 'JPEG', 'JPG', 'GIF', 'BMP', 'WEBP']:
-                        raise ValueError(f"不支持的图片格式：{img.format or '未知'}, 请使用PNG、JPEG、GIF、BMP或WEBP格式的图片")
-                    
-                    # 检查图片尺寸并在需要时进行缩放
-                    width, height = img.size
-                    max_size = self.max_size_input.value()
-                    if width > max_size or height > max_size:
-                        self._statusBar.showMessage("正在调整图片尺寸...")
-                        QApplication.processEvents()
-                        ratio = min(max_size / width, max_size / height)
-                        new_width = int(width * ratio)
-                        new_height = int(height * ratio)
-                        img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                    
-                    # 转换为bytes，确保指定正确的格式
-                    buffer = BytesIO()
-                    original_format = img.format or 'PNG'
-                    format_mapping = {
-                        'JPEG': ('JPEG', 'jpeg'),
-                        'JPG': ('JPEG', 'jpeg'),
-                        'PNG': ('PNG', 'png'),
-                        'GIF': ('GIF', 'gif'),
-                        'BMP': ('BMP', 'bmp'),
-                        'WEBP': ('WEBP', 'webp')
-                    }
-                    
-                    save_format, mime_type = format_mapping.get(original_format, ('PNG', 'png'))
-                    
-                    # 保存图片
-                    if save_format == 'JPEG':
-                        img.save(buffer, format=save_format, quality=self.quality_input.value())
-                    else:
-                        img.save(buffer, format=save_format, optimize=True)
-                    
-                    # 检查文件大小
-                    current_size = len(buffer.getvalue()) / 1024  # 转换为KB
-                    if current_size > self.max_size_kb:
-                        raise ValueError(f"处理后的图片大小（{current_size:.1f}KB）超过了限制（{self.max_size_kb}KB）")
-                    
-                    base64_str = base64.b64encode(buffer.getvalue()).decode()
-                    markdown_str = f"![image](data:image/{mime_type};base64,{base64_str})"
-                    
-                    # 显示结果并复制到剪贴板
-                    self.result_text.setText(markdown_str)
-                    QApplication.clipboard().setText(markdown_str)
-                    success_msg = "转换成功！已复制到剪贴板，继续拖放新的图片文件"
-                    self.label.setText(success_msg)
-                    self._statusBar.showMessage(success_msg)
-                    # 添加成功动画效果
-                    self.label.setStyleSheet("""
-                        QLabel {
-                            border: 2px solid #00b894;
-                            border-radius: 12px;
-                            padding: 40px;
-                            background-color: rgba(0, 184, 148, 0.1);
-                            font-size: 16px;
-                            font-weight: bold;
-                            color: #00b894;
-                        }
-                    """)
+                base64_str, markdown_str = self.image_processor.process_image(file_path)
+                
+                self.result_text.setText(markdown_str)
+                QApplication.clipboard().setText(markdown_str)
+                success_msg = "转换成功！已复制到剪贴板，继续拖放新的图片文件"
+                self.label.setText(success_msg)
+                self._statusBar.showMessage(success_msg)
+                self.label.setStyleSheet(SUCCESS_LABEL_STYLE)
+
             except Exception as e:
                 self.result_text.setText(f"转换失败：{str(e)}")
                 error_msg = f"转换失败：{str(e)}"
                 self.label.setText("转换失败，请重试")
                 self._statusBar.showMessage(error_msg)
-                # 添加失败动画效果
-                self.label.setStyleSheet("""
-                    QLabel {
-                        border: 2px solid #d63031;
-                        border-radius: 12px;
-                        padding: 40px;
-                        background-color: rgba(214, 48, 49, 0.1);
-                        font-size: 16px;
-                        font-weight: bold;
-                        color: #d63031;
-                    }
-                """)
+                self.label.setStyleSheet(ERROR_LABEL_STYLE)
+
             finally:
-                self.processing = False  # 重置处理标志
+                self.processing = False
 
 def main():
     app = QApplication(sys.argv)

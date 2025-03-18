@@ -68,10 +68,14 @@
 
 ```
 .
-├── main.py           # 主程序文件，包含GUI界面和图片转换逻辑
+├── main.py           # 主程序文件，包含GUI界面逻辑
+├── image_processor.py # 图片处理核心模块
+├── styles.py         # UI样式定义文件
+├── config.json       # 用户配置文件
 ├── requirements.txt  # 项目依赖文件
-├── main.spec        # PyInstaller打包配置文件
+├── start.bat         # 快速启动脚本
 ├── .gitignore       # Git忽略文件配置
+├── CHANGELOG.md     # 更新日志
 └── README.md        # 项目说明文档
 ```
 
