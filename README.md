@@ -88,9 +88,9 @@
 
 ## 界面截图
 
-![image-20250318143727872](C:\Users\qwerkilo\下载\ndm下载\img2base64_exe\assets\image-20250318143727872.png)
+![image-20250318143727872](https://cdn.jsdelivr.net/gh/qwerkilo/Image/typora/image-20250318143727872.png)
 
-![image-20250318143741718](C:\Users\qwerkilo\下载\ndm下载\img2base64_exe\assets\image-20250318143741718.png)
+![image-20250318143741718](https://cdn.jsdelivr.net/gh/qwerkilo/Image/typora/image-20250318143741718.png)
 
 ## 开源协议
 
