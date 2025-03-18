@@ -52,6 +52,17 @@
 - 支持多种图片格式
 - 添加自动图片优化功能
 
+## 项目结构
+
+```
+.
+├── main.py           # 主程序文件，包含GUI界面和图片转换逻辑
+├── requirements.txt  # 项目依赖文件
+├── main.spec        # PyInstaller打包配置文件
+├── .gitignore       # Git忽略文件配置
+└── README.md        # 项目说明文档
+```
+
 ## 开源协议
 
 MIT License
