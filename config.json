@@ -1,5 +1,5 @@
 {
     "max_size_kb": 30,
-    "max_image_size": 200,
-    "image_quality": 60
+    "max_image_size": 128,
+    "image_quality": 80
 }
